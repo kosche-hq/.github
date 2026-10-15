@@ -1,0 +1,41 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # This repository is public, so it runs on GitHub's hosted runners only.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - run: node --check tools/apply-repo.mjs
+      - name: every JSON file parses
+        run: |
+          find . -path ./.git -prune -o -name '*.json' -type f -print | while read -r f; do
+            node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" "$f" || { echo "$f does not parse" >&2; exit 1; }
+          done
+      - name: every standard-exceptions.json has the shape apply-repo.mjs reads
+        run: |
+          find . -path ./.git -prune -o -path '*/.github/standard-exceptions.json' -type f -print | while read -r f; do
+            node -e '
+              const e = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+              const reasons = (v) => v === undefined || (v !== null && typeof v === "object" && !Array.isArray(v) && Object.values(v).every((why) => typeof why === "string" && why.trim() !== ""));
+              const ok = e !== null && typeof e === "object" && !Array.isArray(e) && Object.keys(e).every((k) => k === "settings" || k === "rulesets") && reasons(e.settings) && reasons(e.rulesets);
+              if (!ok) { console.error(process.argv[1] + " must be { settings: { name: why }, rulesets: { name: why } }"); process.exit(1); }
+            ' "$f" || exit 1
+          done
+      - name: no em dashes
+        run: |
+          if grep -rIl --exclude-dir=.git $'\xe2\x80\x94' . ; then
+            echo "an em dash is in the tree" >&2; exit 1
+          fi

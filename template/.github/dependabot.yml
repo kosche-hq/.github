@@ -1,0 +1,32 @@
+version: 2
+
+# Dependabot keeps npm and the workflow actions. Renovate (renovate.json)
+# takes what no Dependabot ecosystem reads, through a closed manager list, so
+# the two never propose the same bump.
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # Everything a known advisory names, in one pull request.
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+  # Uncomment for a repository that builds an image from a Dockerfile.
+  # - package-ecosystem: docker
+  #   directory: "/"
+  #   schedule:
+  #     interval: weekly
+  #     day: monday
+  #   open-pull-requests-limit: 2

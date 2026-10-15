@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    # A person's push and a pull request from a branch here run on the
+    # organisation's own runners (vars.CI_RUNNER); a fork or anything a bot
+    # opened stays on GitHub's hosted runners.
+    runs-on: ${{ (github.event.pull_request.head.repo.fork == true || github.event.pull_request.user.type == 'Bot' || github.actor == 'dependabot[bot]' || github.actor == 'renovate[bot]') && 'ubuntu-latest' || vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm build
+      - name: no em dashes
+        run: |
+          if grep -rIl --exclude-dir=.git --exclude-dir=node_modules --exclude=pnpm-lock.yaml $'\xe2\x80\x94' . ; then
+            echo "an em dash is in the tree" >&2; exit 1
+          fi

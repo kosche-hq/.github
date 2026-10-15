@@ -1,0 +1,20 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": [
+    "Renovate runs beside Dependabot, and the split is a closed list: it",
+    "takes .nvmrc, which no Dependabot ecosystem reads. npm, actions and",
+    "Dockerfiles are Dependabot's (.github/dependabot.yml)."
+  ],
+  "extends": ["config:recommended", ":dependencyDashboard"],
+  "enabledManagers": ["nvm"],
+  "timezone": "Europe/Berlin",
+  "schedule": ["* 4-7 * * 1"],
+  "prConcurrentLimit": 2,
+  "packageRules": [
+    {
+      "matchManagers": ["nvm"],
+      "groupName": "node",
+      "minimumReleaseAge": "7 days"
+    }
+  ]
+}
