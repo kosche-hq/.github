@@ -5,7 +5,8 @@
     "takes .nvmrc, which no Dependabot ecosystem reads. npm, actions and",
     "Dockerfiles are Dependabot's (.github/dependabot.yml)."
   ],
-  "extends": ["config:recommended", ":dependencyDashboard"],
+  "extends": ["config:recommended"],
+  "dependencyDashboard": false,
   "enabledManagers": ["nvm"],
   "timezone": "Europe/Berlin",
   "schedule": ["* 4-7 * * 1"],
