@@ -81,4 +81,7 @@ Dependabot and Renovate run side by side with a closed list each:
 Dependabot takes the ecosystems it knows (npm, github-actions, docker);
 Renovate takes only what no Dependabot ecosystem reads (`.nvmrc`, a
 `node-version:` in a workflow, a pinned tool version), so the two never open
-the same bump.
+the same bump. Renovate keeps no Dependency Dashboard (`"dependencyDashboard":
+false`, since 2026-10-16): it is an issue that never closes, so it read as
+work left open in every repository that had one, and the schedule and the
+pull requests are the record of what is pending.
