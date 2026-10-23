@@ -1,0 +1,229 @@
+{
+  "version": 1,
+  "applies": {
+    "all": "every repository",
+    "code": "a repository with a build (package.json, a toolchain)",
+    "site": "a repository that serves public pages",
+    "service": "a repository that runs a service with an API",
+    "release": "a repository that cuts releases"
+  },
+  "gates": [
+    {
+      "id": "lint-warnings",
+      "applies": "code",
+      "metric": "eslint (or the language's linter) warnings and errors",
+      "budget": 0,
+      "tool": "the repo's own lint script",
+      "cost": "cheap",
+      "area": "correctness"
+    },
+    {
+      "id": "strict-types",
+      "applies": "code",
+      "metric": "type errors under the strictest tsconfig (or the language's strict mode)",
+      "budget": 0,
+      "tool": "tsc --noEmit",
+      "cost": "cheap",
+      "area": "correctness"
+    },
+    {
+      "id": "ci-wall-time",
+      "applies": "code",
+      "metric": "wall minutes of the slowest required check on a pull request, p50 of the last 20 runs",
+      "budget": 10,
+      "tool": "GitHub Actions API",
+      "cost": "cheap",
+      "area": "speed"
+    },
+    {
+      "id": "secret-scanning",
+      "applies": "all",
+      "metric": "open secret-scanning alerts, and push protection on",
+      "budget": 0,
+      "tool": "GitHub secret scanning + gitleaks in CI",
+      "cost": "cheap",
+      "area": "security"
+    },
+    {
+      "id": "deps-current",
+      "applies": "code",
+      "metric": "dependencies more than one minor behind (or a major), without a written reason",
+      "budget": 0,
+      "tool": "Renovate status + pnpm outdated",
+      "cost": "cheap",
+      "area": "security"
+    },
+    {
+      "id": "runtime-lts",
+      "applies": "code",
+      "metric": "runtime and framework on the current LTS",
+      "budget": 0,
+      "tool": ".nvmrc / toolchain files against the release schedule",
+      "cost": "cheap",
+      "area": "security"
+    },
+    {
+      "id": "vulns",
+      "applies": "code",
+      "metric": "known high or critical vulnerabilities in the lockfile",
+      "budget": 0,
+      "tool": "osv-scanner + pnpm audit",
+      "cost": "cheap",
+      "area": "security"
+    },
+    {
+      "id": "code-scanning",
+      "applies": "code",
+      "metric": "open CodeQL and Semgrep alerts",
+      "budget": 0,
+      "tool": "CodeQL, Semgrep",
+      "cost": "medium",
+      "area": "security"
+    },
+    {
+      "id": "licences",
+      "applies": "code",
+      "metric": "dependencies outside the allowed licence list",
+      "budget": 0,
+      "tool": "license-checker / cargo-deny",
+      "cost": "cheap",
+      "area": "security"
+    },
+    {
+      "id": "sbom",
+      "applies": "release",
+      "metric": "a CycloneDX SBOM attached to every release",
+      "budget": 1,
+      "tool": "syft / cdxgen",
+      "cost": "medium",
+      "area": "security"
+    },
+    {
+      "id": "provenance",
+      "applies": "release",
+      "metric": "SLSA build level of the release artefacts (target 3), verified",
+      "budget": 3,
+      "tool": "gh attestation verify, cosign verify",
+      "cost": "high",
+      "area": "security",
+      "note": "self-hosted runners reach level 2 at best; level 3 needs a hardened reusable workflow on hosted builders"
+    },
+    {
+      "id": "headers",
+      "applies": "site",
+      "metric": "Mozilla Observatory grade",
+      "budget": "A+",
+      "tool": "Observatory API",
+      "cost": "cheap",
+      "area": "security"
+    },
+    {
+      "id": "csp",
+      "applies": "site",
+      "metric": "Content-Security-Policy present without unsafe-inline or unsafe-eval",
+      "budget": "strict",
+      "tool": "header probe",
+      "cost": "cheap",
+      "area": "security"
+    },
+    {
+      "id": "tls",
+      "applies": "site",
+      "metric": "SSL Labs grade, HSTS preload listed",
+      "budget": "A+",
+      "tool": "SSL Labs API, hstspreload.org",
+      "cost": "cheap",
+      "area": "security"
+    },
+    {
+      "id": "axe",
+      "applies": "site",
+      "metric": "axe violations (WCAG 2.2 AA) per public page, light and dark, phone and desktop",
+      "budget": 0,
+      "tool": "axe-core in Playwright",
+      "cost": "medium",
+      "area": "correctness"
+    },
+    {
+      "id": "lighthouse",
+      "applies": "site",
+      "metric": "Lighthouse performance, accessibility, best practices, SEO, mobile and desktop, per public page",
+      "budget": 100,
+      "tool": "Lighthouse CI",
+      "cost": "medium",
+      "area": "polish"
+    },
+    {
+      "id": "web-vitals",
+      "applies": "site",
+      "metric": "LCP / INP / CLS on a mid phone profile",
+      "budget": { "lcp_ms": 1200, "inp_ms": 100, "cls": 0.05 },
+      "tool": "Lighthouse CI + web-vitals field data where available",
+      "cost": "medium",
+      "area": "speed"
+    },
+    {
+      "id": "bundle",
+      "applies": "site",
+      "metric": "gzip bytes of the entry bundle and per-route chunks",
+      "budget": "per app, in the repo's scorecard config",
+      "tool": "size-limit",
+      "cost": "cheap",
+      "area": "speed"
+    },
+    {
+      "id": "api-latency",
+      "applies": "service",
+      "metric": "p95 latency per endpoint class",
+      "budget": "per app, in the repo's scorecard config",
+      "tool": "OTLP metrics (ClickHouse)",
+      "cost": "high",
+      "area": "speed"
+    },
+    {
+      "id": "memory",
+      "applies": "service",
+      "metric": "resident memory of the bay and the bench under the reference load",
+      "budget": "per app, in the repo's scorecard config",
+      "tool": "OTLP metrics",
+      "cost": "high",
+      "area": "speed"
+    },
+    {
+      "id": "test-time",
+      "applies": "code",
+      "metric": "wall seconds of the unit suite",
+      "budget": "per repo, in the repo's scorecard config",
+      "tool": "the reporter's JSON",
+      "cost": "cheap",
+      "area": "speed"
+    },
+    {
+      "id": "mutation",
+      "applies": "code",
+      "metric": "mutation score of the merge-deciding code",
+      "budget": "per repo, in the repo's scorecard config",
+      "tool": "Stryker (nightly, not per pull request)",
+      "cost": "high",
+      "area": "correctness"
+    },
+    {
+      "id": "docs-links",
+      "applies": "all",
+      "metric": "broken links when the docs build",
+      "budget": 0,
+      "tool": "lychee",
+      "cost": "cheap",
+      "area": "polish"
+    },
+    {
+      "id": "readme-adr",
+      "applies": "code",
+      "metric": "a README per package and an ADR index entry for each recorded decision",
+      "budget": 0,
+      "tool": "a presence check in scorecard.mjs",
+      "cost": "cheap",
+      "area": "polish"
+    }
+  ]
+}
