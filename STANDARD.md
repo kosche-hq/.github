@@ -90,12 +90,18 @@ hostname: they are run only against public production pages.
 5. atlas' shared-rules drift check carries this standard into every
    repository's agent rules.
 
-## Open questions
+## Decisions (lead, 2026-10-23 12:06, within Daniel's words; he may overrule)
 
-- Is a written, expiring exception acceptable for a Lighthouse 100 that
-  conflicts with a product choice (a typeface, a motion), or must the page
-  change?
-- p95 and memory budgets need data: who owns the dashboards (ClickHouse read
-  user for the bench, OTLP for the rest)?
-- CI under 10 minutes against yard's `shots` (13 minutes a shard): more shards
-  or fewer pictures per pull request?
+- **Third-party scanners.** Mozilla Observatory and SSL Labs run against public
+  production pages only, never gated or staging hosts.
+- **Latency and memory data.** ClickHouse (read-only user) for the bench, OTLP
+  for everything else. The internals track owns the dashboards (the Brain and
+  Internals rooms); atlas reads them for the brain baseline.
+- **Lighthouse 100 in four categories.** The page changes (subset and preload
+  fonts, motion that respects reduced motion, kit fixes). A written exception
+  needs Daniel's yes per page and an expiry, never by default.
+- **SLSA.** Level 2 now, everywhere. Release builds move to GitHub-hosted
+  runners (in the release workflow) so releases reach level 3; self-hosted
+  runners stay for CI.
+- **CI under 10 minutes** is wall clock, not runner minutes, and is met with
+  more shards (5 to 6 for yard's `shots`), never with fewer pictures.
