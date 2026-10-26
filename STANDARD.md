@@ -94,9 +94,8 @@ hostname: they are run only against public production pages.
 
 - **Third-party scanners.** Mozilla Observatory and SSL Labs run against public
   production pages only, never gated or staging hosts.
-- **Latency and memory data.** ClickHouse (read-only user) for the bench, OTLP
-  for everything else. The internals track owns the dashboards (the Brain and
-  Internals rooms); atlas reads them for the brain baseline.
+- **Latency and memory data.** OpenTelemetry (OTLP) traces and metrics, read
+  from a read-only store; each product's own dashboards are the record.
 - **Lighthouse 100 in four categories.** The page changes (subset and preload
   fonts, motion that respects reduced motion, kit fixes). A written exception
   needs Daniel's yes per page and an expiry, never by default.
