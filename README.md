@@ -3,13 +3,14 @@
 The standard every kosche-hq repository is held to, the script that holds it
 there, and the organisation's default community files.
 
-| Part | What |
-| --- | --- |
-| `standard/settings.json` | repository settings: private, squash merges only and titled by the pull request, auto-merge, update branch, delete the branch on merge, no wiki or projects |
-| `standard/rulesets/` | `main is append-only` (no deletion, no force push; held once by the organisation for every repository) and `main takes signed commits only` (per repository; organisation and repository admins can bypass) |
-| `tools/apply-repo.mjs` | reads a repository, prints what differs from the above and which standard files it lacks; `--apply` changes it |
-| `template/` | the files a new repository starts from: CI, Dependabot and Renovate on disjoint managers, CODEOWNERS, the pull request template, SECURITY.md, `.yard/policy.md`, `.nvmrc` |
-| `SECURITY.md`, `.github/PULL_REQUEST_TEMPLATE.md` | the organisation's defaults: GitHub shows them in every kosche-hq repository that has none of its own |
+| Part                                              | What                                                                                                                                                                                                        |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `standard/settings.json`                          | repository settings: private, squash merges only and titled by the pull request, auto-merge, update branch, delete the branch on merge, no wiki or projects                                                 |
+| `STANDARD.md`, `standard/gates.json`              | the code standard: every measured gate, its budget, tool and cost, how the per-repository scorecard works, and how a gate becomes a blocker                                                                 |
+| `standard/rulesets/`                              | `main is append-only` (no deletion, no force push; held once by the organisation for every repository) and `main takes signed commits only` (per repository; organisation and repository admins can bypass) |
+| `tools/apply-repo.mjs`                            | reads a repository, prints what differs from the above and which standard files it lacks; `--apply` changes it                                                                                              |
+| `template/`                                       | the files a new repository starts from: CI, Dependabot and Renovate on disjoint managers, CODEOWNERS, the pull request template, SECURITY.md, `.yard/policy.md`, `.nvmrc`                                   |
+| `SECURITY.md`, `.github/PULL_REQUEST_TEMPLATE.md` | the organisation's defaults: GitHub shows them in every kosche-hq repository that has none of its own                                                                                                       |
 
 ## Running the tool
 
@@ -35,7 +36,9 @@ each difference:
 ```json
 {
   "settings": { "squash_merge_commit_message": "why this repository differs" },
-  "rulesets": { "main takes signed commits only": "why this repository differs" }
+  "rulesets": {
+    "main takes signed commits only": "why this repository differs"
+  }
 }
 ```
 
