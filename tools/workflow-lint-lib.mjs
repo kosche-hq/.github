@@ -9,16 +9,24 @@
 // one a bot's pull request or branch push can start; code on main got there
 // through review and is not the bots' any more.
 //
-// A workflow_run runs the default branch's workflow and checks out the
-// default branch unless told otherwise, so it carries a bot's code only when
-// it reads the triggering run's head (workflow_run.head_sha, head_branch,
-// head_commit or pull_requests), which a checkout of that code needs.
+// It fails closed (lead 2026-10-27 14:0x): a job counts as reaching a
+// persistent runner unless the lint proves it does not.
 //
-// A `runs-on:` expression is evaluated for every bot and every event that can
-// carry a bot's code, over the set of values it can take: an organisation
-// variable may or may not be set, and anything the lint cannot know (a
-// matrix value, an unknown context, an unknown function) is UNKNOWN, which
-// fails, because the lint has to prove the runner and not guess it.
+// - A workflow_run counts as a bot's whenever a bot's run can trigger it;
+//   whether it then reads the triggering head is not something to guess.
+// - A `runs-on:` or `if:` expression is evaluated for every bot and every
+//   event that can carry a bot's code, over the set of values it can take.
+//   Only what is fixed for every such run is known: the event's name, the
+//   actor (the bot, also on a re-run) and, on a pull request, its author.
+//   Everything else is UNKNOWN and takes every value: branch names and
+//   refs (a bot picks them), organisation variables (anyone with admin sets
+//   them), the fork flag, matrix values, functions. A runner that is
+//   UNKNOWN fails, because the lint has to prove the runner and not guess it.
+// - A job that calls a reusable workflow is the callee's jobs: a local
+//   callee (`./.github/workflows/x.yml`) is read and checked with the
+//   caller's events; a callee in another repository is refused, except this
+//   repository's own on main, whose `workflow_call` workflows are checked
+//   here as if any bot's event called them.
 
 export const BOTS = ["dependabot[bot]", "renovate[bot]"];
 export const EPHEMERAL = "kosche-ci-ephemeral";
@@ -34,7 +42,8 @@ export function allowedLabel(label) {
 /**
  * The events of a workflow that can run a bot's code: every pull request,
  * and a push or workflow_run unless its `branches` names only main or master.
- * `on` may be a string, a list or a map; YAML 1.1 readers turn the key into
+ * A reusable workflow (`workflow_call`) counts as both a pull request and a
+ * push, since any caller may be a bot's. `on` may be a string, a list or a map; YAML 1.1 readers turn the key into
  * `true`, so the caller passes whichever it found.
  */
 export function botEvents(on) {
@@ -50,6 +59,8 @@ export function botEvents(on) {
   for (const [event, spec] of Object.entries(map)) {
     if (["pull_request", "pull_request_target", "merge_group"].includes(event)) {
       events.push(event);
+    } else if (event === "workflow_call") {
+      events.push("pull_request", "push");
     } else if (event === "push" || event === "workflow_run") {
       const branches = spec && typeof spec === "object" ? spec.branches : undefined;
       const tagsOnly =
@@ -59,24 +70,19 @@ export function botEvents(on) {
       if (!tagsOnly && !mainOnly) events.push(event);
     }
   }
-  return events;
+  return uniq(events);
 }
 
-/** The github context a bot's run has, for one event. */
+/**
+ * The github context a bot's run has, for one event: only what is fixed for
+ * every such run. A key that is not here is UNKNOWN when read.
+ */
 export function botContext(bot, event) {
-  const branch = `${bot.startsWith("renovate") ? "renovate" : "dependabot"}/npm/x`;
   const user = { login: bot, type: "Bot" };
-  const pr = event.startsWith("pull_request")
-    ? { user, head: { ref: branch, repo: { fork: false } }, base: { ref: "main" } }
-    : null;
   return {
     actor: bot,
-    triggering_actor: bot,
     event_name: event,
-    ref: pr ? "refs/pull/1/merge" : `refs/heads/${branch}`,
-    ref_name: pr ? "1/merge" : branch,
-    head_ref: pr ? branch : "",
-    event: { pull_request: pr, sender: user },
+    event: event.startsWith("pull_request") ? { pull_request: { user } } : { pull_request: null },
   };
 }
 
@@ -110,10 +116,23 @@ function uniq(values) {
   return [...seen.values()];
 }
 
+// GitHub's coercion for == and != when the types differ: null is 0, a
+// boolean is 0 or 1, a string is its number ("" is 0, text is NaN), and an
+// array or object is NaN. NaN equals nothing.
+function toNumber(v) {
+  if (v === null) return 0;
+  if (typeof v === "boolean") return v ? 1 : 0;
+  if (typeof v === "number") return v;
+  if (typeof v === "string") return v.trim() === "" ? 0 : Number(v);
+  return NaN;
+}
+
 function equal(a, b) {
   if (a === UNKNOWN || b === UNKNOWN) return [true, false];
   if (typeof a === "string" && typeof b === "string") return [a.toLowerCase() === b.toLowerCase()];
-  return [a === b];
+  if (typeof a === typeof b && (a === null || typeof a !== "object")) return [a === b];
+  if (a !== null && b !== null && typeof a === "object" && typeof b === "object") return [a === b];
+  return [toNumber(a) === toNumber(b)];
 }
 
 function lookup(root, path) {
@@ -129,7 +148,8 @@ function lookup(root, path) {
 
 /**
  * Every value `src` (the inside of `${{ }}`) can take for a run whose github
- * context is `github`. `vars.*` is unset or set to a self-hosted label.
+ * context is `github`. Any other context (`vars`, `matrix`, `inputs`) is
+ * UNKNOWN.
  */
 export function evaluate(src, github) {
   const tokens = tokenize(src);
@@ -220,8 +240,7 @@ export function evaluate(src, github) {
         path.push(key && key.t === "str" ? key.v : "*");
       }
     }
-    if (path[0] === "github") return [lookup(github, path.slice(1))];
-    if (path[0] === "vars" && path.length === 2) return [null, `vars.${path[1]}`];
+    if (path[0] === "github" && !path.includes("*")) return [lookup(github, path.slice(1))];
     return [UNKNOWN];
   }
 
@@ -251,32 +270,62 @@ function refuse(value) {
   return `${JSON.stringify(value)}`;
 }
 
+// The org's own reusable workflows: checked in this repository's CI under
+// every bot event (botEvents counts workflow_call as both), so a call to one
+// on main is proved there.
+const OWN_CALLEE = /^kosche-hq\/\.github\/\.github\/workflows\/[\w.-]+\.ya?ml@main$/;
+
+/** Every bot job's problems for one job map, following local callees. */
+function lintJobs(jobs, github, event, bot, load, seen, prefix) {
+  const problems = [];
+  for (const [name, job] of Object.entries(jobs)) {
+    const where = `${prefix}job ${name}`;
+    if (!job || typeof job !== "object") continue;
+    try {
+      if (job.if !== undefined) {
+        const cond = typeof job.if === "string" && !job.if.includes("${{") ? `\${{ ${job.if} }}` : job.if;
+        if (!values(cond, github).some((v) => truthy(v).includes(true))) continue;
+      }
+      if (job.uses !== undefined) {
+        problems.push(...lintCall(job.uses, where, github, event, bot, load, seen));
+        continue;
+      }
+      const bad = uniq(values(job["runs-on"], github))
+        .map(refuse)
+        .filter((r) => r !== null);
+      if (bad.length > 0) problems.push(`${where}, ${event} by ${bot}: runs on ${bad.join(" or ")}`);
+    } catch (err) {
+      problems.push(`${where}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return problems;
+}
+
+/** A job's call of a reusable workflow: the callee's jobs, or refused. */
+function lintCall(uses, where, github, event, bot, load, seen) {
+  if (typeof uses === "string" && OWN_CALLEE.test(uses)) return [];
+  if (typeof uses !== "string" || !uses.startsWith("./")) {
+    return [`${where}, ${event} by ${bot}: calls ${JSON.stringify(uses)}, whose runners the lint cannot see`];
+  }
+  if (seen.includes(uses)) return [];
+  const callee = load(uses.slice(2));
+  if (!callee || typeof callee !== "object") return [`${where}: cannot read the called workflow ${uses}`];
+  const jobs = callee.jobs && typeof callee.jobs === "object" ? callee.jobs : {};
+  return lintJobs(jobs, github, event, bot, load, [...seen, uses], `${where} > ${uses} `);
+}
+
 /**
  * Every way a workflow lets a bot's job onto a runner it may not use, as
- * lines for a person. `workflow` is the parsed file, `on` its trigger map.
+ * lines for a person. `workflow` is the parsed file, `on` its trigger map,
+ * and `load(path)` reads a workflow by its path from the repository root
+ * (for a local reusable call), or returns null.
  */
-export function lintWorkflow(workflow, on) {
+export function lintWorkflow(workflow, on, load = () => null) {
   const problems = [];
   const jobs = workflow && typeof workflow === "object" && workflow.jobs && typeof workflow.jobs === "object" ? workflow.jobs : {};
-  const readsHead = /workflow_run\.(head_sha|head_branch|head_commit|pull_requests)/.test(JSON.stringify(workflow));
-  for (const event of botEvents(on).filter((e) => e !== "workflow_run" || readsHead)) {
+  for (const event of botEvents(on)) {
     for (const bot of BOTS) {
-      const github = botContext(bot, event);
-      for (const [name, job] of Object.entries(jobs)) {
-        if (!job || typeof job !== "object" || job.uses !== undefined) continue;
-        try {
-          if (job.if !== undefined) {
-            const cond = typeof job.if === "string" && !job.if.includes("${{") ? `\${{ ${job.if} }}` : job.if;
-            if (!values(cond, github).some((v) => truthy(v).includes(true))) continue;
-          }
-          const bad = uniq(values(job["runs-on"], github))
-            .map(refuse)
-            .filter((r) => r !== null);
-          if (bad.length > 0) problems.push(`job ${name}, ${event} by ${bot}: runs on ${bad.join(" or ")}`);
-        } catch (err) {
-          problems.push(`job ${name}: ${err instanceof Error ? err.message : String(err)}`);
-        }
-      }
+      problems.push(...lintJobs(jobs, botContext(bot, event), event, bot, load, [], ""));
     }
   }
   return uniq(problems);

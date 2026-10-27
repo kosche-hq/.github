@@ -23,8 +23,11 @@ test("any other self-hosted label is refused", () => {
   assert.equal(lintWorkflow(job([]), pr).length, 2);
 });
 
-test("an organisation variable counts as set to a self-hosted label", () => {
-  assert.match(lintWorkflow(job("${{ vars.CI_RUNNER || 'ubuntu-latest' }}"), pr)[0], /"vars.CI_RUNNER"/);
+test("an organisation variable can hold anything", () => {
+  assert.match(lintWorkflow(job("${{ vars.CI_RUNNER || 'ubuntu-latest' }}"), pr)[0], /cannot work out/);
+  // Finding 3: a variable in a comparison is no fixed string either.
+  assert.equal(lintWorkflow(job("${{ vars.HOSTED == 'yes' && 'ubuntu-latest' || 'kosche-ci' }}"), pr).length, 2);
+  assert.equal(lintWorkflow(job("kosche-ci", { if: "vars.BOTS_ALLOWED == 'yes'" }), pr).length, 2);
   assert.deepEqual(lintWorkflow(job(ROUTED), pr), []);
   assert.deepEqual(lintWorkflow(job(ROUTED), { push: { branches: ["**"] } }), []);
 });
@@ -32,7 +35,7 @@ test("an organisation variable counts as set to a self-hosted label", () => {
 test("a routing that forgets one bot is caught for that bot only", () => {
   const onlyDependabot = "${{ github.actor == 'dependabot[bot]' && 'ubuntu-latest' || vars.CI_RUNNER || 'ubuntu-latest' }}";
   const problems = lintWorkflow(job(onlyDependabot), { push: null });
-  assert.deepEqual(problems, ['job check, push by renovate[bot]: runs on "vars.CI_RUNNER"']);
+  assert.deepEqual(problems, ["job check, push by renovate[bot]: runs on a runner the lint cannot work out"]);
 });
 
 test("what the lint cannot work out fails", () => {
@@ -47,7 +50,56 @@ test("a job a bot cannot start is not a bot's job", () => {
   assert.deepEqual(lintWorkflow(job("kosche-ci", { if: "${{ github.event.pull_request.user.type != 'Bot' }}" }), pr), []);
   assert.equal(lintWorkflow(job("kosche-ci", { if: "github.actor != 'dependabot[bot]'" }), pr).length, 1);
   assert.equal(lintWorkflow(job("kosche-ci", { if: "contains(github.ref, 'x')" }), pr).length, 2);
-  assert.deepEqual(lintWorkflow({ jobs: { call: { uses: "o/r/.github/workflows/x.yml@main" } } }, pr), []);
+});
+
+test("a bot picks its branch, so a branch name proves nothing", () => {
+  // Finding 2: renovate's branchPrefix and a bot's head_ref are the bot's choice.
+  const byBranch = "${{ startsWith(github.head_ref, 'renovate/') && 'ubuntu-latest' || 'kosche-ci' }}";
+  assert.equal(lintWorkflow(job(byBranch), pr).length, 2);
+  const byRef = "${{ github.head_ref == 'renovate/x' && 'ubuntu-latest' || 'kosche-ci' }}";
+  assert.equal(lintWorkflow(job(byRef), pr).length, 2);
+  assert.equal(lintWorkflow(job("kosche-ci", { if: "github.ref_name == 'main'" }), { push: null }).length, 2);
+  assert.equal(lintWorkflow(job("kosche-ci", { if: "github.event.pull_request.base.ref == 'x'" }), pr).length, 2);
+});
+
+test("GitHub's loose == is followed, and the fork flag is not known", () => {
+  // Finding 5: fork == 0 is true for a non-fork, and fork is not the bot's.
+  assert.equal(lintWorkflow(job("${{ github.event.pull_request.head.repo.fork == 0 && 'kosche-ci' || 'ubuntu-latest' }}"), pr).length, 2);
+  const g = botContext("renovate[bot]", "push");
+  assert.deepEqual(evaluate("github.event.pull_request == 0", g), [true]);
+  assert.deepEqual(evaluate("true == 1", g), [true]);
+  assert.deepEqual(evaluate("'' == false", g), [true]);
+  assert.deepEqual(evaluate("'1' == 1", g), [true]);
+  assert.deepEqual(evaluate("'a' == 0", g), [false]);
+  assert.deepEqual(evaluate("null == false", g), [true]);
+});
+
+test("bracket access reads the same context as a dot", () => {
+  // Finding 4: github['event']['workflow_run'] is no way around the lint.
+  const run = { workflow_run: { workflows: ["CI"] } };
+  assert.equal(lintWorkflow(job("kosche-ci", { if: "github.event['workflow_run']['head_sha'] != ''" }), run).length, 2);
+  assert.deepEqual(evaluate("github['actor']", botContext("renovate[bot]", "push")), ["renovate[bot]"]);
+  assert.equal(lintWorkflow(job("${{ github.event.labels[0] && 'ubuntu-latest' || 'kosche-ci' }}"), pr).length, 2);
+});
+
+test("a reusable workflow is its jobs", () => {
+  // Finding 1: a call hid a self-hosted callee.
+  const caller = { jobs: { call: { uses: "./.github/workflows/build.yml" } } };
+  const callee = { on: { workflow_call: null }, jobs: { build: { "runs-on": "kosche-ci" } } };
+  const load = (rel) => (rel === ".github/workflows/build.yml" ? callee : null);
+  assert.deepEqual(lintWorkflow(caller, pr, load), [
+    'job call > ./.github/workflows/build.yml job build, pull_request by dependabot[bot]: runs on "kosche-ci"',
+    'job call > ./.github/workflows/build.yml job build, pull_request by renovate[bot]: runs on "kosche-ci"',
+  ]);
+  assert.match(lintWorkflow({ jobs: { call: { uses: "./.github/workflows/x.yml" } } }, pr)[0], /cannot read the called workflow/);
+  // Another repository's workflow cannot be seen; this repository's own is linted here.
+  assert.equal(lintWorkflow({ jobs: { call: { uses: "o/r/.github/workflows/x.yml@main" } } }, pr).length, 2);
+  assert.equal(lintWorkflow({ jobs: { call: { uses: "kosche-hq/.github/.github/workflows/x.yml@v1" } } }, pr).length, 2);
+  assert.deepEqual(lintWorkflow({ jobs: { call: { uses: "kosche-hq/.github/.github/workflows/workflow-lint.yml@main" } } }, pr), []);
+  // A workflow others call is checked as if a bot's run called it.
+  assert.equal(lintWorkflow(callee, callee.on).length, 4);
+  const loop = { jobs: { again: { uses: "./.github/workflows/loop.yml" } } };
+  assert.deepEqual(lintWorkflow(loop, pr, () => loop), []);
 });
 
 test("only events that carry a bot's code are checked", () => {
@@ -69,16 +121,13 @@ test("expressions: GitHub's ||, &&, !, == and quoting", () => {
   assert.deepEqual(evaluate("'' || 'a'", g), ["a"]);
   assert.deepEqual(evaluate("'it''s'", g), ["it's"]);
   assert.deepEqual(evaluate("null && 'a'", g), [null]);
-  assert.deepEqual(evaluate("github.event.pull_request.head.repo.fork", g), [false]);
+  assert.deepEqual(evaluate("github.event.pull_request.head.repo.fork", g).length, 1);
+  assert.equal(typeof evaluate("github.event.pull_request.head.repo.fork", g)[0], "symbol");
   assert.deepEqual(evaluate("github.event.pull_request.user.login", botContext("renovate[bot]", "push")), [null]);
-  assert.deepEqual(evaluate("vars.R || 'b'", g), ["b", "vars.R"]);
+  assert.equal(evaluate("vars.R || 'b'", g).length, 2);
 });
 
-test("a workflow_run carries a bot's code only when it reads the triggering head", () => {
-  const run = { workflow_run: { workflows: ["CI"] } };
-  assert.deepEqual(lintWorkflow(job("kosche-ci"), run), []);
-  const checksOutHead = job("kosche-ci", {
-    steps: [{ uses: "actions/checkout@v7", with: { ref: "${{ github.event.workflow_run.head_sha }}" } }],
-  });
-  assert.equal(lintWorkflow(checksOutHead, run).length, 2);
+test("a workflow_run a bot's run can trigger is a bot's", () => {
+  assert.equal(lintWorkflow(job("kosche-ci"), { workflow_run: { workflows: ["CI"] } }).length, 2);
+  assert.deepEqual(lintWorkflow(job("kosche-ci"), { workflow_run: { workflows: ["CI"], branches: ["main"] } }), []);
 });

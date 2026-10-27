@@ -14,6 +14,23 @@ import { join } from "node:path";
 import { lintWorkflow } from "./workflow-lint-lib.mjs";
 
 const root = process.argv[2] ?? ".";
+
+function read(path) {
+  const json = execFileSync(
+    "ruby",
+    ["-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load(File.read(ARGV[0]), aliases: true))", path],
+    { encoding: "utf8" },
+  );
+  return JSON.parse(json);
+}
+
+// A local reusable workflow, by its path from the root; only one under
+// .github/workflows, where GitHub looks for it.
+function load(rel) {
+  if (!/^\.github\/workflows\/[\w.-]+\.ya?ml$/.test(rel)) return null;
+  const path = join(root, rel);
+  return existsSync(path) ? read(path) : null;
+}
 const dir = join(root, ".github", "workflows");
 const files = existsSync(dir)
   ? readdirSync(dir)
@@ -24,15 +41,10 @@ const files = existsSync(dir)
 let failed = 0;
 for (const file of files) {
   const path = join(dir, file);
-  const json = execFileSync(
-    "ruby",
-    ["-ryaml", "-rjson", "-e", "puts JSON.generate(YAML.safe_load(File.read(ARGV[0]), aliases: true))", path],
-    { encoding: "utf8" },
-  );
-  const workflow = JSON.parse(json);
+  const workflow = read(path);
   // YAML 1.1 reads the key `on` as the boolean true.
   const on = workflow?.on ?? workflow?.true;
-  for (const problem of lintWorkflow(workflow, on)) {
+  for (const problem of lintWorkflow(workflow, on, load)) {
     console.error(`${path}: ${problem}`);
     failed++;
   }
