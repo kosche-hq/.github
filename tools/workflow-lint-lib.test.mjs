@@ -29,13 +29,16 @@ test("an organisation variable can hold anything", () => {
   assert.equal(lintWorkflow(job("${{ vars.HOSTED == 'yes' && 'ubuntu-latest' || 'kosche-ci' }}"), pr).length, 2);
   assert.equal(lintWorkflow(job("kosche-ci", { if: "vars.BOTS_ALLOWED == 'yes'" }), pr).length, 2);
   assert.deepEqual(lintWorkflow(job(ROUTED), pr), []);
-  assert.deepEqual(lintWorkflow(job(ROUTED), { push: { branches: ["**"] } }), []);
+  // A push has no pull request author, and its actor may be a person who
+  // clicked "Update branch" on a bot's pull request: the routing cannot tell.
+  assert.equal(lintWorkflow(job(ROUTED), { push: { branches: ["**"] } }).length, 2);
 });
 
 test("a routing that forgets one bot is caught for that bot only", () => {
-  const onlyDependabot = "${{ github.actor == 'dependabot[bot]' && 'ubuntu-latest' || vars.CI_RUNNER || 'ubuntu-latest' }}";
-  const problems = lintWorkflow(job(onlyDependabot), { push: null });
-  assert.deepEqual(problems, ["job check, push by renovate[bot]: runs on a runner the lint cannot work out"]);
+  const onlyDependabot =
+    "${{ github.event.pull_request.user.login == 'dependabot[bot]' && 'ubuntu-latest' || vars.CI_RUNNER || 'ubuntu-latest' }}";
+  const problems = lintWorkflow(job(onlyDependabot), pr);
+  assert.deepEqual(problems, ["job check, pull_request by renovate[bot]: runs on a runner the lint cannot work out"]);
 });
 
 test("what the lint cannot work out fails", () => {
@@ -46,9 +49,10 @@ test("what the lint cannot work out fails", () => {
 });
 
 test("a job a bot cannot start is not a bot's job", () => {
-  assert.deepEqual(lintWorkflow(job("kosche-ci", { if: "github.actor != 'dependabot[bot]' && github.actor != 'renovate[bot]'" }), pr), []);
+  const notBots = "github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.user.login != 'renovate[bot]'";
+  assert.deepEqual(lintWorkflow(job("kosche-ci", { if: notBots }), pr), []);
   assert.deepEqual(lintWorkflow(job("kosche-ci", { if: "${{ github.event.pull_request.user.type != 'Bot' }}" }), pr), []);
-  assert.equal(lintWorkflow(job("kosche-ci", { if: "github.actor != 'dependabot[bot]'" }), pr).length, 1);
+  assert.equal(lintWorkflow(job("kosche-ci", { if: "github.event.pull_request.user.login != 'dependabot[bot]'" }), pr).length, 1);
   assert.equal(lintWorkflow(job("kosche-ci", { if: "contains(github.ref, 'x')" }), pr).length, 2);
 });
 
@@ -78,7 +82,7 @@ test("bracket access reads the same context as a dot", () => {
   // Finding 4: github['event']['workflow_run'] is no way around the lint.
   const run = { workflow_run: { workflows: ["CI"] } };
   assert.equal(lintWorkflow(job("kosche-ci", { if: "github.event['workflow_run']['head_sha'] != ''" }), run).length, 2);
-  assert.deepEqual(evaluate("github['actor']", botContext("renovate[bot]", "push")), ["renovate[bot]"]);
+  assert.deepEqual(evaluate("github['event_name']", botContext("renovate[bot]", "push")), ["push"]);
   assert.equal(lintWorkflow(job("${{ github.event.labels[0] && 'ubuntu-latest' || 'kosche-ci' }}"), pr).length, 2);
 });
 
@@ -97,7 +101,7 @@ test("a reusable workflow is its jobs", () => {
   assert.equal(lintWorkflow({ jobs: { call: { uses: "kosche-hq/.github/.github/workflows/x.yml@v1" } } }, pr).length, 2);
   assert.deepEqual(lintWorkflow({ jobs: { call: { uses: "kosche-hq/.github/.github/workflows/workflow-lint.yml@main" } } }, pr), []);
   // A workflow others call is checked as if a bot's run called it.
-  assert.equal(lintWorkflow(callee, callee.on).length, 4);
+  assert.equal(lintWorkflow(callee, callee.on).length, 10);
   const loop = { jobs: { again: { uses: "./.github/workflows/loop.yml" } } };
   assert.deepEqual(lintWorkflow(loop, pr, () => loop), []);
 });
@@ -116,8 +120,8 @@ test("only events that carry a bot's code are checked", () => {
 
 test("expressions: GitHub's ||, &&, !, == and quoting", () => {
   const g = botContext("renovate[bot]", "pull_request");
-  assert.deepEqual(evaluate("github.actor == 'RENOVATE[BOT]'", g), [true]);
-  assert.deepEqual(evaluate("!(github.actor != 'renovate[bot]')", g), [true]);
+  assert.deepEqual(evaluate("github.event.pull_request.user.login == 'RENOVATE[BOT]'", g), [true]);
+  assert.deepEqual(evaluate("!(github.event.pull_request.user.login != 'renovate[bot]')", g), [true]);
   assert.deepEqual(evaluate("'' || 'a'", g), ["a"]);
   assert.deepEqual(evaluate("'it''s'", g), ["it's"]);
   assert.deepEqual(evaluate("null && 'a'", g), [null]);
@@ -130,4 +134,21 @@ test("expressions: GitHub's ||, &&, !, == and quoting", () => {
 test("a workflow_run a bot's run can trigger is a bot's", () => {
   assert.equal(lintWorkflow(job("kosche-ci"), { workflow_run: { workflows: ["CI"] } }).length, 2);
   assert.deepEqual(lintWorkflow(job("kosche-ci"), { workflow_run: { workflows: ["CI"], branches: ["main"] } }), []);
+});
+
+test("a reusable workflow is checked under every event a caller can have", () => {
+  // .github#3 at 0cdc859: the callee keeps its caller's event, whichever it is.
+  for (const event of ["pull_request", "pull_request_target", "merge_group", "push", "workflow_run"]) {
+    const callee = { on: { workflow_call: null }, jobs: { build: { if: `github.event_name == '${event}'`, "runs-on": "kosche-ci" } } };
+    assert.equal(lintWorkflow(callee, callee.on).length, 2, event);
+  }
+});
+
+test("the actor is whoever set the run off, not whose code it carries", () => {
+  // A person labels, reopens or enqueues a bot's pull request: the run has
+  // the bot's code and that person as its actor.
+  const notBots = "github.actor != 'dependabot[bot]' && github.actor != 'renovate[bot]'";
+  for (const on of [pr, { pull_request_target: null }, { merge_group: null }, { push: null }, { workflow_run: { workflows: ["CI"] } }]) {
+    assert.equal(lintWorkflow(job("kosche-ci", { if: notBots }), on).length, 2, Object.keys(on)[0]);
+  }
 });

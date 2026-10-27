@@ -16,8 +16,10 @@
 //   whether it then reads the triggering head is not something to guess.
 // - A `runs-on:` or `if:` expression is evaluated for every bot and every
 //   event that can carry a bot's code, over the set of values it can take.
-//   Only what is fixed for every such run is known: the event's name, the
-//   actor (the bot, also on a re-run) and, on a pull request, its author.
+//   Only what is fixed for every such run is known: the event's name and,
+//   on a pull request, its author. The actor is not: a person who labels,
+//   reopens or enqueues a bot's pull request, or pushes onto its branch,
+//   sets off a run that carries the bot's code under that person's name.
 //   Everything else is UNKNOWN and takes every value: branch names and
 //   refs (a bot picks them), organisation variables (anyone with admin sets
 //   them), the fork flag, matrix values, functions. A runner that is
@@ -26,7 +28,8 @@
 //   callee (`./.github/workflows/x.yml`) is read and checked with the
 //   caller's events; a callee in another repository is refused, except this
 //   repository's own on main, whose `workflow_call` workflows are checked
-//   here as if any bot's event called them.
+//   here under every event in BOT_EVENTS, since a callee keeps whichever
+//   event its caller had.
 
 export const BOTS = ["dependabot[bot]", "renovate[bot]"];
 export const EPHEMERAL = "kosche-ci-ephemeral";
@@ -34,17 +37,21 @@ const HOSTED = /^(ubuntu|macos|windows)-[\w.-]+$/;
 
 const UNKNOWN = Symbol("unknown");
 
+/** Every event that can carry a bot's code; a reusable workflow may run under any of them. */
+export const BOT_EVENTS = ["pull_request", "pull_request_target", "merge_group", "push", "workflow_run"];
+
 /** A label a bot's job may run on. */
 export function allowedLabel(label) {
   return label === EPHEMERAL || HOSTED.test(label);
 }
 
 /**
- * The events of a workflow that can run a bot's code: every pull request,
- * and a push or workflow_run unless its `branches` names only main or master.
- * A reusable workflow (`workflow_call`) counts as both a pull request and a
- * push, since any caller may be a bot's. `on` may be a string, a list or a map; YAML 1.1 readers turn the key into
- * `true`, so the caller passes whichever it found.
+ * The events of a workflow that can run a bot's code: every pull request and
+ * merge group, and a push or workflow_run unless its `branches` names only
+ * main or master. A reusable workflow (`workflow_call`) counts as every
+ * event in BOT_EVENTS, since any caller may be a bot's. `on` may be a
+ * string, a list or a map; YAML 1.1 readers turn the key into `true`, so the
+ * caller passes whichever it found.
  */
 export function botEvents(on) {
   const map =
@@ -60,7 +67,7 @@ export function botEvents(on) {
     if (["pull_request", "pull_request_target", "merge_group"].includes(event)) {
       events.push(event);
     } else if (event === "workflow_call") {
-      events.push("pull_request", "push");
+      events.push(...BOT_EVENTS);
     } else if (event === "push" || event === "workflow_run") {
       const branches = spec && typeof spec === "object" ? spec.branches : undefined;
       const tagsOnly =
@@ -80,7 +87,6 @@ export function botEvents(on) {
 export function botContext(bot, event) {
   const user = { login: bot, type: "Bot" };
   return {
-    actor: bot,
     event_name: event,
     event: event.startsWith("pull_request") ? { pull_request: { user } } : { pull_request: null },
   };
@@ -271,8 +277,8 @@ function refuse(value) {
 }
 
 // The org's own reusable workflows: checked in this repository's CI under
-// every bot event (botEvents counts workflow_call as both), so a call to one
-// on main is proved there.
+// every event in BOT_EVENTS (botEvents expands workflow_call to all of them),
+// so a call to one on main is proved there whatever the caller's event.
 const OWN_CALLEE = /^kosche-hq\/\.github\/\.github\/workflows\/[\w.-]+\.ya?ml@main$/;
 
 /** Every bot job's problems for one job map, following local callees. */
