@@ -39,3 +39,6 @@ jobs:
           if grep -rIl --exclude-dir=.git $'\xe2\x80\x94' . ; then
             echo "an em dash is in the tree" >&2; exit 1
           fi
+      - run: node --test tools/
+      - name: no bot's code on a self-hosted runner (here and in the template)
+        run: node tools/workflow-lint.mjs . && node tools/workflow-lint.mjs template

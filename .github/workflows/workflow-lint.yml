@@ -1,0 +1,37 @@
+name: workflow lint
+
+# Every repository's CI calls this, so a workflow that lets renovate's or
+# dependabot's code onto a self-hosted runner other than kosche-ci-ephemeral
+# fails there (tools/workflow-lint-lib.mjs has the rule):
+#
+#   workflow-lint:
+#     uses: kosche-hq/.github/.github/workflows/workflow-lint.yml@main
+#
+# It runs on GitHub's hosted runners: it reads a pull request's workflows,
+# which may be a bot's.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: kosche-hq/.github
+          ref: main
+          path: .kosche-github
+          sparse-checkout: tools
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: node .kosche-github/tools/workflow-lint.mjs .

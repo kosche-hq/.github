@@ -34,3 +34,7 @@ jobs:
           if grep -rIl --exclude-dir=.git --exclude-dir=node_modules --exclude=pnpm-lock.yaml $'\xe2\x80\x94' . ; then
             echo "an em dash is in the tree" >&2; exit 1
           fi
+
+  workflow-lint:
+    # No bot's code on a self-hosted runner other than kosche-ci-ephemeral.
+    uses: kosche-hq/.github/.github/workflows/workflow-lint.yml@main
