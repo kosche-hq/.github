@@ -65,6 +65,22 @@ imported by a product.
   mobile and on desktop; docs build without broken links; a README per package
   and an ADR for each decision that was a choice.
 
+## Naming
+
+Source: the estate sitemap (kosche-hq/kosche, docs/estate/sitemap.md,
+version 3, approved by Daniel on 2026-11-11). Applies to every repository in
+kosche-hq and to the hope-alchemy organisation.
+
+- A repository is named after its domain without the ending, in lowercase:
+  `verum` for verum.tools, `deterministic` for deterministic.pro, `yard` for
+  yard.engineer, `modelcards` for modelcards.org.
+- The ending stays, joined with a hyphen, when it is part of the name:
+  `whs-berlin` for whs.berlin, `dogwalker-land` for dogwalker.land.
+- No suffix such as `-site`, `-app`, `-web` or `-engine`: the site of a
+  product lives in the product's repository.
+- A repository without a domain is named after the product (`sky`, `ui`).
+- Packages are published and imported as `@kosche/*`.
+
 ## What is measured where
 
 | Where                                     | What                                                                                                                            | How often                      |
