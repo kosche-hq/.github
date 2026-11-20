@@ -7,8 +7,10 @@ name: workflow lint
 #   workflow-lint:
 #     uses: kosche-hq/.github/.github/workflows/workflow-lint.yml@main
 #
-# It runs on GitHub's hosted runners: it reads a pull request's workflows,
-# which may be a bot's.
+# It runs on kosche-ci-ephemeral, the pod that takes one job and is deleted:
+# it reads a pull request's workflows, which may be a bot's, and the
+# organisation's Actions budget is zero, so a hosted runner would never
+# start for a private caller.
 
 on:
   workflow_call:
@@ -18,7 +20,7 @@ permissions:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: kosche-ci-ephemeral
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7

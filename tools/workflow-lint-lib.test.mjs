@@ -5,7 +5,7 @@ import { botContext, botEvents, evaluate, lintWorkflow } from "./workflow-lint-l
 const job = (runsOn, extra = {}) => ({ jobs: { check: { "runs-on": runsOn, ...extra } } });
 const pr = { pull_request: null };
 
-// The template's and listentomac's expression: bots and forks go hosted.
+// The older guard, which sent bots and forks to a hosted label: still bot-safe.
 const ROUTED =
   "${{ (github.event.pull_request.head.repo.fork == true || github.event.pull_request.user.type == 'Bot' || github.actor == 'dependabot[bot]' || github.actor == 'renovate[bot]') && 'ubuntu-latest' || vars.CI_RUNNER || 'ubuntu-latest' }}";
 

@@ -51,7 +51,11 @@ it is a pull request like any other.
 
 This repository is its own example: the standard says private, and it is
 public, because GitHub reads an organisation's default community files only
-from a public repository named `.github`. Its CI runs on GitHub's hosted
+from a public repository named `.github`. Its own CI runs on GitHub's hosted
+runners, the one exception in the organisation: hosted minutes cost nothing
+on a public repository, and no runner group admits a public repository,
+because a fork's pull request must never reach a self-hosted runner. Every
+private repository, and the template below, runs on the organisation's own
 runners only.
 
 ## A new repository
