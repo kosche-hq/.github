@@ -15,9 +15,11 @@ concurrency:
 jobs:
   check:
     # A person's push and a pull request from a branch here run on the
-    # organisation's own runners (vars.CI_RUNNER); a fork or anything a bot
-    # opened stays on GitHub's hosted runners.
-    runs-on: ${{ (github.event.pull_request.head.repo.fork == true || github.event.pull_request.user.type == 'Bot' || github.actor == 'dependabot[bot]' || github.actor == 'renovate[bot]') && 'ubuntu-latest' || vars.CI_RUNNER || 'ubuntu-latest' }}
+    # organisation's own runners (vars.CI_RUNNER); a fork or a third-party
+    # bot's pull request runs on kosche-ci-ephemeral, the pod that takes one
+    # job and is deleted. Nothing runs on GitHub's hosted runners: the
+    # organisation's Actions budget is zero.
+    runs-on: ${{ (github.event.pull_request.head.repo.fork == true || (github.event.pull_request.user.type == 'Bot' && github.event.pull_request.user.login != 'kosche-yard[bot]') || github.actor == 'dependabot[bot]' || github.actor == 'renovate[bot]') && 'kosche-ci-ephemeral' || vars.CI_RUNNER || 'kosche-ci' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7

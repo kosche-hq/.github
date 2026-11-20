@@ -52,10 +52,10 @@ imported by a product.
   the work), runtimes on the current LTS, licences inside an allowed list. For
   sites: Mozilla Observatory A+, a strict CSP without `unsafe-inline`, SSL Labs
   A+, HSTS preload. For releases: an SBOM and signed artefacts with
-  provenance. SLSA level 3 is the target; self-hosted runners reach level 2, so
-  level 3 is reached where a release can be built by a hardened reusable
-  workflow on a hosted builder, and the scorecard says which level it
-  measured.
+  provenance. SLSA level 3 is the target; it needs an isolated, hardened
+  builder, which here means the organisation's own ephemeral runners and
+  never a GitHub-hosted one (the Actions budget is zero), and the scorecard
+  says which level it measured.
 - **Speed.** CI under 10 minutes wall on a pull request; a time budget for each
   repository's unit suite; bundle and API latency (p95) and memory budgets per
   app; Core Web Vitals on a mid phone (LCP under 1.2 s, INP under 100 ms, CLS
@@ -115,8 +115,9 @@ hostname: they are run only against public production pages.
 - **Lighthouse 100 in four categories.** The page changes (subset and preload
   fonts, motion that respects reduced motion, kit fixes). A written exception
   needs Daniel's yes per page and an expiry, never by default.
-- **SLSA.** Level 2 now, everywhere. Release builds move to GitHub-hosted
-  runners (in the release workflow) so releases reach level 3; self-hosted
-  runners stay for CI.
+- **SLSA.** Level 2 now, everywhere. Every build, release builds included,
+  runs on the organisation's own runners (Daniel, 2026-11-19: "own runners -
+  no paid gh runners"); releases reach level 3 through a hardened reusable
+  workflow on the ephemeral pool, not by moving to GitHub-hosted runners.
 - **CI under 10 minutes** is wall clock, not runner minutes, and is met with
   more shards (5 to 6 for yard's `shots`), never with fewer pictures.

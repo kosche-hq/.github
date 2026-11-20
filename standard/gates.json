@@ -106,7 +106,7 @@
       "tool": "gh attestation verify, cosign verify",
       "cost": "high",
       "area": "security",
-      "note": "self-hosted runners reach level 2 at best; level 3 needs a hardened reusable workflow on hosted builders"
+      "note": "level 3 needs a hardened reusable workflow on an isolated builder: the organisation's own ephemeral runners, never GitHub-hosted ones (the Actions budget is zero)"
     },
     {
       "id": "headers",
